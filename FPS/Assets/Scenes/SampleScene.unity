@@ -1248,8 +1248,8 @@ MonoBehaviour:
   walkSpeed: 7
   sprintSpeed: 10
   groundDrag: 7
-  jumpForce: 7
-  jumpCooldown: 1
+  jumpForce: 6
+  jumpCooldown: 0.3
   airMultiplier: 0.1
   crouchSpeed: 3.5
   crouchYScale: 0.5
@@ -1261,7 +1261,7 @@ MonoBehaviour:
   groundLayer:
     serializedVersion: 2
     m_Bits: 8
-  maxSlopeAngle: 0
+  maxSlopeAngle: 40
   orientation: {fileID: 109922553}
 --- !u!1 &1737172225
 GameObject:

@@ -164,7 +164,8 @@ public class PlayerMovement : MonoBehaviour
         // Velocity in the air
         if (rb.velocity.y < 0)
         {
-            rb.AddForce(Vector3.down * 15f, ForceMode.Force);
+            rb.velocity += Vector3.up * Physics.gravity.y * 3 * Time.deltaTime;
+            // rb.AddForce(Vector3.down * 15f, ForceMode.Force);
         }
     }
 
