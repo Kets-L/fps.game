@@ -4,16 +4,20 @@ using UnityEngine;
 
 public class PlayerMovement : MonoBehaviour
 {
+    [Header("References")]
+    public Transform orientation;
+
     [Header("Movement")]
-    private float moveSpeed;
     public float walkSpeed;
     public float sprintSpeed;
     public float groundDrag;
+    private float moveSpeed;
 
     [Header("Jumping")]
     public float jumpForce;
     public float jumpCooldown;
-    public float airMultiplier;
+    public float airMovementMultiplier;
+    public float grativyDownMultiplier;
     bool readyToJump;
 
     [Header("Crouching")]
@@ -37,8 +41,6 @@ public class PlayerMovement : MonoBehaviour
     public float maxSlopeAngle;
     private RaycastHit slopeHit;
     private bool exitingSlope;
-
-    public Transform orientation;
 
     float horizontalInput;
     float verticalInput;
@@ -159,13 +161,12 @@ public class PlayerMovement : MonoBehaviour
         if (isGrounded)
             rb.AddForce(moveDirection.normalized * moveSpeed * 10f, ForceMode.Force);
         else if (!isGrounded)
-            rb.AddForce(moveDirection.normalized * moveSpeed * 10f * airMultiplier, ForceMode.Force);
+            rb.AddForce(moveDirection.normalized * moveSpeed * 10f * airMovementMultiplier, ForceMode.Force);
 
         // Velocity in the air
         if (rb.velocity.y < 0)
         {
-            rb.velocity += Vector3.up * Physics.gravity.y * 3 * Time.deltaTime;
-            // rb.AddForce(Vector3.down * 15f, ForceMode.Force);
+            rb.velocity += Vector3.up * Physics.gravity.y * grativyDownMultiplier * Time.deltaTime;
         }
     }
 
@@ -224,11 +225,7 @@ public class PlayerMovement : MonoBehaviour
 
         if (!(Mathf.Abs(desiredHeight - transform.localScale.y) <= difference) && isGrounded)
         {
-            transform.localScale = new Vector3(transform.localScale.x, Mathf.Lerp(transform.localScale.y, desiredHeight, crouchingSpeed), transform.localScale.z);
-            if (desiredHeight == crouchYScale)
-            {
-                rb.AddForce(Vector3.down * 0.5f, ForceMode.Impulse);
-            }
+            transform.localScale = new Vector3(transform.localScale.x, Mathf.Lerp(transform.localScale.y, desiredHeight, crouchingSpeed * Time.deltaTime), transform.localScale.z);
         }
     }
 
