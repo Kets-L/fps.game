@@ -16,6 +16,13 @@ public class GunSystem : MonoBehaviour
     public bool allowButtonHold;
     int bulletsLeft, bulletsShot;
 
+    [Header("Aim down sight")]
+    public Vector3 adsPosition;
+    public Quaternion adsRotation;
+    public float adsSpeed;
+    private Vector3 hipfirePosition;
+    private Quaternion hipfireRotation;
+
     [Header("Graphics")]
     public GameObject bulletHoleGraphic;
     public ParticleSystem muzzleFlash;
@@ -27,6 +34,9 @@ public class GunSystem : MonoBehaviour
     {
         bulletsLeft = magazineSize;
         readyToShoot = true;
+
+        hipfirePosition = transform.localPosition;
+        hipfireRotation = transform.localRotation;
     }
 
     // Update is called once per frame
@@ -50,6 +60,8 @@ public class GunSystem : MonoBehaviour
             bulletsShot = bulletsPerTap;
             Shoot();
         }
+
+        AimDownSight(Input.GetKey(KeyCode.Mouse1));
     }
 
     private void Shoot()
@@ -99,5 +111,19 @@ public class GunSystem : MonoBehaviour
     {
         bulletsLeft = magazineSize;
         reloading = false;
+    }
+
+    public void AimDownSight(bool aiming)
+    {
+        if (aiming && !reloading)
+        {
+            transform.localPosition = Vector3.Lerp(transform.localPosition, adsPosition, Time.deltaTime * adsSpeed);
+            transform.localRotation = Quaternion.Slerp(transform.localRotation, adsRotation, Time.deltaTime * adsSpeed);
+        } 
+        else
+        {
+            transform.localPosition = Vector3.Lerp(transform.localPosition, hipfirePosition, Time.deltaTime * adsSpeed);
+            transform.localRotation = Quaternion.Slerp(transform.localRotation, hipfireRotation, Time.deltaTime * adsSpeed);
+        }
     }
 }
