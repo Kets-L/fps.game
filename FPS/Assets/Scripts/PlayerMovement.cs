@@ -6,12 +6,15 @@ public class PlayerMovement : MonoBehaviour
 {
     [Header("References")]
     public Transform orientation;
+    public CapsuleCollider playerCollider;
+    public Transform cameraPos;
 
     [Header("Movement")]
     public float walkSpeed;
     public float sprintSpeed;
     public float groundDrag;
     private float moveSpeed;
+    private bool sprinting;
 
     [Header("Jumping")]
     public float jumpForce;
@@ -24,13 +27,40 @@ public class PlayerMovement : MonoBehaviour
     public float crouchSpeed;
     public float crouchYScale;
     public float crouchingSpeed;
+    public float cameraSmoothAmount;
+    public float cameraCrouchHeight;
     private float startYScale;
-    private bool isCrouching;
+    private float startCameraHeight;
+    private float cameraHeightVelocity;
+    private bool crouching;
+
+    [Header("Sliding")]
+    public float maxSlideTime;
+    public float slideForce;
+    private float slideTimer;
+    private bool sliding;
+
+    [Header("Wallrunning")]
+    public LayerMask whatIsWall;
+    public LayerMask whatIsGround;
+    public float wallRunForce;
+    public float maxWallRunTime;
+    private float wallRunTimer;
+
+    [Space]
+
+    public float wallCheckDistance;
+    public float minJumpHeight;
+    private RaycastHit leftWallHit;
+    private RaycastHit rightWallHit;
+    private bool wallLeft;
+    private bool wallRight;
 
     [Header("Keybinds")]
     public KeyCode jumpKey = KeyCode.Space;
     public KeyCode sprintKey = KeyCode.LeftShift;
     public KeyCode crouchKey = KeyCode.LeftControl;
+    public KeyCode slideKey = KeyCode.LeftControl; 
 
     [Header("Ground Check")]
     public float playerHeight;
@@ -44,13 +74,14 @@ public class PlayerMovement : MonoBehaviour
 
     float horizontalInput;
     float verticalInput;
+    float forwardVelocity;
 
     Vector3 moveDirection;
 
     Rigidbody rb;
 
-    private MovementState state;
-    private enum MovementState
+    public MovementState state;
+    public enum MovementState
     {
         walking,
         sprinting,
@@ -66,36 +97,61 @@ public class PlayerMovement : MonoBehaviour
 
         readyToJump = true;
 
-        startYScale = 1f;
+        startYScale = playerCollider.height;
+        startCameraHeight = cameraPos.localPosition.y;
     }
 
     // Update is called once per frame
     void Update()
     {
-        // Groundcheck
-        isGrounded = Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, groundLayer);
-
         PlayerInput();
         SpeedControl();
         StateHandler();
+        CheckForWall();
 
-        if (isGrounded) {
+        // Groundcheck
+        isGrounded = Physics.Raycast(transform.position, Vector3.down, playerHeight * 0.5f + 0.2f, groundLayer);
+
+        if (isGrounded)
+        {
             rb.drag = groundDrag;
-        } else {
+        }
+        else
+        {
             rb.drag = 0f;
         }
+
+        forwardVelocity = orientation.InverseTransformDirection(rb.velocity).z;
     }
 
     private void FixedUpdate()
     {
         MovePlayer();
-        Crouch();
+
+        float desiredPlayerHeight = (crouching || sliding) ? crouchYScale : startYScale;
+        float desiredCameraHeight = (crouching || sliding) ? cameraCrouchHeight : startCameraHeight;
+
+        if ((playerCollider.height != desiredPlayerHeight || cameraPos.localPosition.y != desiredCameraHeight) && isGrounded)
+        {
+            AdjustHeight(desiredPlayerHeight, desiredCameraHeight);
+        }
+
+        if (sliding)
+            SlidingMovement();
     }
 
     private void PlayerInput()
     {
         horizontalInput = Input.GetAxisRaw("Horizontal");
         verticalInput = Input.GetAxisRaw("Vertical");
+
+        if (Input.GetKey(sprintKey))
+            sprinting = true;
+
+        if (!Input.GetKey(sprintKey) && forwardVelocity < 8)
+        {
+            sprinting = false;
+        }
 
         // Jump
         if (Input.GetKey(jumpKey) && readyToJump && isGrounded)
@@ -106,13 +162,31 @@ public class PlayerMovement : MonoBehaviour
         }
 
         // Crouch
-        isCrouching = Input.GetKey(crouchKey);
+        //crouching = Input.GetKey(crouchKey) && forwardVelocity < 8 && !sliding;
+        if (Input.GetKeyDown(crouchKey) && forwardVelocity < 8 && !sliding) {
+            crouching = true;
+        }
+        else if (!Input.GetKey(crouchKey) && !Physics.Raycast(transform.position, Vector3.up, playerHeight * 0.5f + 0.2f, groundLayer))
+        {
+            crouching = false;
+        }
+
+        // Slide
+        if (Input.GetKeyDown(slideKey) && forwardVelocity >= 8 && isGrounded)
+        {
+            StartSlide();
+        }
+
+        //if (Input.GetKeyUp(slideKey) && sliding)
+        //{
+        //    StopSlide();
+        //}
     }
 
     private void StateHandler()
     {
         // Sprinting
-        if (isGrounded && Input.GetKey(sprintKey))
+        if (isGrounded && sprinting)
         {
             state = MovementState.sprinting;
             moveSpeed = sprintSpeed;
@@ -126,7 +200,7 @@ public class PlayerMovement : MonoBehaviour
         }
 
         // Crouching
-        if (Input.GetKey(crouchKey) && isGrounded) 
+        if (Input.GetKey(crouchKey) && isGrounded && !sliding) 
         {
             state = MovementState.crouching;
             moveSpeed = crouchSpeed;
@@ -147,7 +221,7 @@ public class PlayerMovement : MonoBehaviour
         // On slope
         if (OnSlope() && !exitingSlope)
         {
-            rb.AddForce(GetSlopeMoveDirection() * moveSpeed * 20f, ForceMode.Force);
+            rb.AddForce(GetSlopeMoveDirection(moveDirection) * moveSpeed * 20f, ForceMode.Force);
 
             if (rb.velocity.y > 0)
             {
@@ -218,15 +292,15 @@ public class PlayerMovement : MonoBehaviour
         exitingSlope = false;
     }
 
-    private void Crouch()
+    private void AdjustHeight(float desiredPlayerHeight, float desiredCameraHeight)
     {
-        float desiredHeight = isCrouching ? crouchYScale : startYScale;
-        float difference = Mathf.Abs(desiredHeight * 0.0001f);
+        float center = desiredPlayerHeight / 2 - 1;
 
-        if (!(Mathf.Abs(desiredHeight - transform.localScale.y) <= difference) && isGrounded)
-        {
-            transform.localScale = new Vector3(transform.localScale.x, Mathf.Lerp(transform.localScale.y, desiredHeight, crouchingSpeed * Time.deltaTime), transform.localScale.z);
-        }
+        playerCollider.height = Mathf.Lerp(playerCollider.height, desiredPlayerHeight, crouchingSpeed);
+        playerCollider.center = Vector3.Lerp(playerCollider.center, new Vector3(0, center, 0), crouchingSpeed);
+
+        float cameraHeight = Mathf.SmoothDamp(cameraPos.localPosition.y, desiredCameraHeight, ref cameraHeightVelocity, cameraSmoothAmount);
+        cameraPos.localPosition = new Vector3(cameraPos.localPosition.x, cameraHeight, cameraPos.localPosition.z);
     }
 
     private bool OnSlope()
@@ -239,8 +313,66 @@ public class PlayerMovement : MonoBehaviour
         return false;
     }
 
-    private Vector3 GetSlopeMoveDirection()
+    private Vector3 GetSlopeMoveDirection(Vector3 direction)
     {
-        return Vector3.ProjectOnPlane(moveDirection, slopeHit.normal).normalized;
+        return Vector3.ProjectOnPlane(direction, slopeHit.normal).normalized;
+    }
+
+    private void StartSlide()
+    {
+        sliding = true;
+
+        slideTimer = maxSlideTime;
+    }
+
+    private void SlidingMovement()
+    {
+        // Sliding normal 
+        if (!OnSlope() || rb.velocity.y > -0.1f)
+        {
+            rb.AddForce(orientation.forward.normalized * slideTimer * slideForce, ForceMode.Force);
+
+            slideTimer -= Time.deltaTime;
+        }
+
+        // Sliding down a slope
+        else
+        {
+            rb.AddForce(GetSlopeMoveDirection(orientation.forward) * slideForce, ForceMode.Force);
+        }
+
+        if (slideTimer <= 0)
+            StopSlide();
+    }
+
+    private void StopSlide()
+    {
+        sliding = false;
+    }
+
+    private void CheckForWall()
+    {
+        wallRight = Physics.Raycast(transform.position, orientation.right, out rightWallHit, wallCheckDistance, whatIsWall);
+        wallLeft = Physics.Raycast(transform.position, -orientation.right, out leftWallHit, wallCheckDistance, whatIsWall);
+    }
+
+    private bool AboveGround()
+    {
+        return !Physics.Raycast(transform.position, Vector3.down, minJumpHeight, whatIsGround);
+    }
+
+    private void StartWallRun()
+    {
+
+    }
+
+    private void WallRunningMovement()
+    {
+
+    }
+
+    private void StopWallRun()
+    {
+
     }
 }
